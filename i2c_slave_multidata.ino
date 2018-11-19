@@ -1,10 +1,22 @@
+/* !!!read me!!!
+
+    neutralVal +- 5 で閾値を設定し，ニュートラル時には全アクチュエータを解放する．
+    sleepTime でスリープ時間を設定し，スリープ時には全アクチュエータを解放する．(不要？)
+    変換関数
+
+
+*/
+
+
+
 #include <Wire.h>
 #define ANALOG_NUM 3
 #define TOTAL_ANALOG_NUM ANALOG_NUM * 2
+#define Threshold 5
 
 //能動入力が0~2, 受動入力が3~5
-int masterVal[3];
-int slaveVal[3];
+int masterVal[ANALOG_NUM];
+int slaveVal[ANALOG_NUM];
 int analogVal[TOTAL_ANALOG_NUM];
 
 int pumpSupplyPin[ANALOG_NUM] = {3, 6, 10};
@@ -15,7 +27,8 @@ int valveVacuumPin[ANALOG_NUM] = {15, 17, 19};
 float a = 0.9;
 int filteredVal[TOTAL_ANALOG_NUM][2] = {0}; //0~255
 int maxVal[TOTAL_ANALOG_NUM] = {0}; //0~255
-int minVal[TOTAL_ANALOG_NUM] = {0}; //0~255
+int minVal[TOTAL_ANALOG_NUM] = {255}; //0~255
+int neutralVal = 50;
 
 #define RESOLUSION 100
 int rate[TOTAL_ANALOG_NUM] = {0}; //0~100
@@ -23,15 +36,26 @@ int rate[TOTAL_ANALOG_NUM] = {0}; //0~100
 int PWM[ANALOG_NUM] = {0};
 bool bDeform[TOTAL_ANALOG_NUM] = {false};
 bool bPolarity[TOTAL_ANALOG_NUM] = {false};
+bool bNeutral[TOTAL_ANALOG_NUM] = {false};
 
+#define LED 8
+#define SW 7
+boolean bLed = false;
 boolean bRealtime = false;
+int swVal = 0;
+int swCount = 0;
+
+#define RE 4
+boolean bReset = false;
+int reVal = 0;
+int oldReVal = 0;
 
 //PID
 int delta[TOTAL_ANALOG_NUM][2] = {{0}, {0}};
 int absDelta[TOTAL_ANALOG_NUM] = {0};
-float dt = 100 / 3;
+float dt = 0;
 float integral;
-float KP = 7.0; //Pゲイン
+float KP = 6.0; //Pゲイン
 float KI = 0.0; //Iゲイン
 float KD = 0.1; //Dゲイン
 float p = 0.0;
@@ -43,6 +67,11 @@ void setup() {
   Wire.onRequest(requestEvent);
   Wire.onReceive(receiveEvent);
   Serial.begin(9600);
+
+  pinMode(LED, OUTPUT);
+  pinMode(SW, INPUT);
+  pinMode(RE, INPUT);
+  digitalWrite(LED, LOW);
 
   for (int i = 0; i < ANALOG_NUM; i++) {
     pinMode(pumpSupplyPin[i], OUTPUT);
@@ -71,20 +100,21 @@ void loop() {
     adjustData(i);
   }
 
-  Serial.print("slave1: ");
-  Serial.print(rate[0]);
-  Serial.print(" slave2: ");
-  Serial.print(rate[1]);
-  Serial.print(" slave3: ");
-  Serial.print(rate[2]);
-  Serial.print(" master1: ");
-  Serial.print(rate[3]);
-  Serial.print(" master2: ");
-  Serial.print(rate[4]);
-  Serial.print(" master3: ");
-  Serial.println(rate[5]);
+  //  Serial.print("slave1: ");
+  //  Serial.print(rate[0]);
+  //  Serial.print(" slave2: ");
+  //  Serial.print(rate[1]);
+  //  Serial.print(" slave3: ");
+  //  Serial.print(rate[2]);
+  //  Serial.print(" master1: ");
+  //  Serial.print(rate[3]);
+  //  Serial.print(" master2: ");
+  //  Serial.print(rate[4]);
+  //  Serial.print(" master3: ");
+  //  Serial.println(rate[5]);
 
-  //switchPlay();//スイッチ
+  switchPlay();//スイッチ
+  Serial.println(swVal);
   //workRealtime();//
 
   for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値の更新
@@ -111,13 +141,48 @@ void requestEvent() {
 void adjustData(int _number) {
 
   filteredVal[_number][1] = a * filteredVal[_number][0] + (1 - a) * analogVal[_number]; //フィルタリング
-  rate[_number] = map(filteredVal[_number][1], minVal[_number], maxVal[_number], 0, RESOLUSION); //マッピング
+  rate[_number] = map(filteredVal[_number][1], minVal[_number], maxVal[_number], RESOLUSION, 0); //マッピング
 
   if (filteredVal[_number][1] > maxVal[_number]) { //最大値
     maxVal[_number] = filteredVal[_number][1];
   }
   if (filteredVal[_number][1] < minVal[_number]) { //最小値
     minVal[_number] = filteredVal[_number][1];
+  }
+}
+
+void switchPlay() {
+  swVal = digitalRead(SW);
+
+  if (swVal == HIGH) {
+    swCount += 1;
+  } else {
+    swCount = 0;
+  }
+
+  if (swCount == 10) {
+    bLed = !bLed;
+    bRealtime = !bRealtime;
+  }
+
+  if (bLed) {
+    digitalWrite(LED, HIGH);
+
+  } else {
+    digitalWrite(LED, LOW);
+  }
+
+  delay(1);
+}
+
+void switchReset() {
+  reVal = digitalRead(RE);
+
+  if (reVal == HIGH) {
+    for (int i = 0; i < TOTAL_ANALOG_NUM; i++) {
+      minVal[i] = {127};
+      maxVal[i] = {127};
+    }
   }
 }
 
@@ -148,7 +213,7 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
   i = KI * integral;
   d = KD * dd / dt;
 
-  setPWM_PID(p, 0, 0, child);
+  setPWM_PID(p, 0, d, child);
 
   if (absDelta[teacher] >= 1) {
     bDeform[teacher] = true;
@@ -162,23 +227,38 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
   else if (delta[teacher][1] < 0) {
     bPolarity[teacher] = false;
   }
+
+  if (neutralVal - 5 < rate[teacher] && rate[teacher] < neutralVal + 5) { //45~ 55のとき
+    bNeutral[teacher] = true;
+  } else {
+    bNeutral[teacher] = false;
+  }
 }
 
 int setPWM_PID(int p, int i, int d, int number) {
   //pwmに変換
   PWM[number] = abs(p + i + d);
+  if (PWM[number] < 80) {
+    PWM[number] = 0;
+  } else if (PWM[number] >= 255) {
+    PWM[number] = 255;
+  }
   return PWM[number];
 }
 
 void fbOutput(int teacher, int child) {
-  if (bDeform[teacher] == true) { // 偏差があるかどうか
-    if (bPolarity[teacher] == true) { //正負の判定
-      sendDigitalSupply(child, PWM[child]);
-    } else {
-      sendDigitalVacuum(child, PWM[child]);
-    }
+  if (bNeutral[teacher] == true) { //ニュートラルかどうか
+    sendDigitalExhaust(child);
   } else {
-    sendDigitalClose(child);
+    if (bDeform[teacher] == true) { // 偏差があるかどうか
+      if (bPolarity[teacher] == true) { //正負の判定
+        sendDigitalSupply(child, PWM[child]);
+      } else {
+        sendDigitalVacuum(child, PWM[child]);
+      }
+    } else {
+      sendDigitalClose(child);
+    }
   }
 }
 
