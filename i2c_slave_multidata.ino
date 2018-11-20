@@ -3,8 +3,6 @@
     neutralVal +- 5 で閾値を設定し，ニュートラル時には全アクチュエータを解放する．
     sleepTime でスリープ時間を設定し，スリープ時には全アクチュエータを解放する．(不要？)
     変換関数
-
-
 */
 
 
@@ -44,6 +42,10 @@ boolean bLed = false;
 boolean bRealtime = false;
 int swVal = 0;
 int swCount = 0;
+//boolean bPartnerLed = false;
+int masterStatus = 0;
+int sendSwitch = 0;
+int receiveSwitch = 0;
 
 #define RE 4
 boolean bReset = false;
@@ -114,8 +116,17 @@ void loop() {
   //  Serial.println(rate[5]);
 
   switchPlay();//スイッチ
-  Serial.println(swVal);
   //workRealtime();//
+  
+  Serial.print("bLed: ");
+  Serial.print(bLed);
+  Serial.print(", receiveSwitch: ");
+  Serial.println(receiveSwitch);
+
+
+  if (receiveSwitch == 3) {
+    bLed = !bLed;
+  }
 
   for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値の更新
     filteredVal[i][0] = filteredVal[i][1];
@@ -125,10 +136,12 @@ void loop() {
 }
 
 void receiveEvent() {
-  if ( Wire.available() > 2 ) {
+  if ( Wire.available() > 3 ) {
     analogVal[3] = Wire.read();
     analogVal[4] = Wire.read();
     analogVal[5] = Wire.read();
+    masterStatus = Wire.read(); //masterのステータス
+    receiveSwitch = Wire.read();//スイッチの受信
   }
 }
 
@@ -136,6 +149,11 @@ void requestEvent() {
   for (int i = 0; i < 3; i++) {
     Wire.write(analogVal[i]);
   }
+  Wire.write(bLed);//自分のステータス
+  if (bLed == true && masterStatus == 1) { //slaveがon, かつmasterもonの時,masterをoffにする
+    sendSwitch = 3;
+  }
+  Wire.write(sendSwitch);//相手のスイッチ
 }
 
 void adjustData(int _number) {
