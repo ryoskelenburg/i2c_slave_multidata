@@ -42,15 +42,13 @@ boolean bLed = false;
 boolean bRealtime = false;
 int swVal = 0;
 int swCount = 0;
-//boolean bPartnerLed = false;
+
 int masterStatus = 0;
 int sendSwitch = 0;
 int receiveSwitch = 0;
 
 int oldBLed = 0;
 int booleanDelta = 0;
-
-
 
 #define RE 4
 boolean bReset = false;
@@ -62,7 +60,7 @@ int delta[TOTAL_ANALOG_NUM][2] = {{0}, {0}};
 int absDelta[TOTAL_ANALOG_NUM] = {0};
 float dt = 0;
 float integral;
-float KP = 6.0; //Pゲイン
+float KP = 4.0; //Pゲイン
 float KI = 0.0; //Iゲイン
 float KD = 0.1; //Dゲイン
 float p = 0.0;
@@ -103,10 +101,6 @@ void loop() {
 
   /*----*/
 
-  for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値のフィルタリング
-    adjustData(i);
-  }
-
   //  Serial.print("slave1: ");
   //  Serial.print(rate[0]);
   //  Serial.print(" slave2: ");
@@ -119,33 +113,35 @@ void loop() {
   //  Serial.print(rate[4]);
   //  Serial.print(" master3: ");
   //  Serial.println(rate[5]);
+  Serial.print("pwm1: ");
+  Serial.print(PWM[3]);
+  Serial.print(" pwm2: ");
+  Serial.print(PWM[4]);
+  Serial.print(" pwm3: ");
+  Serial.println(PWM[5]);
 
   switchPlay();//スイッチ
-  //workRealtime();//
-
-  //  Serial.print("bLed: ");
-  //  Serial.print(bLed);
-  //  Serial.print(", old: ");
-  //  Serial.println(oldBLed);
-  //  Serial.println(booleanDelta);
+  workRealtime();//
 
   if (receiveSwitch == 3) {
     bLed = !bLed;
+    bRealtime = !bRealtime;
   }
+  booleanDelta = oldBLed - (int)bLed;
+  oldBLed = (int)bLed;
 
   for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値の更新
     filteredVal[i][0] = filteredVal[i][1];
   }
-  booleanDelta = oldBLed - (int)bLed;
-  oldBLed = (int)bLed;
+
   delay(100 / 3);
 }
 
 void receiveEvent() {
-  if ( Wire.available() > 3 ) {
-    analogVal[3] = Wire.read();
-    analogVal[4] = Wire.read();
-    analogVal[5] = Wire.read();
+  if ( Wire.available() > 7 ) {
+    for (int i = 0; i < TOTAL_ANALOG_NUM; i++) {
+      rate[i] = Wire.read();
+    }
     masterStatus = Wire.read(); //masterのステータス
     receiveSwitch = Wire.read();//スイッチの受信
   }
@@ -162,19 +158,6 @@ void requestEvent() {
     sendSwitch = 0;
   }
   Wire.write(sendSwitch);//相手のスイッチ
-}
-
-void adjustData(int _number) {
-
-  filteredVal[_number][1] = a * filteredVal[_number][0] + (1 - a) * analogVal[_number]; //フィルタリング
-  rate[_number] = map(filteredVal[_number][1], minVal[_number], maxVal[_number], RESOLUSION, 0); //マッピング
-
-  if (filteredVal[_number][1] > maxVal[_number]) { //最大値
-    maxVal[_number] = filteredVal[_number][1];
-  }
-  if (filteredVal[_number][1] < minVal[_number]) { //最小値
-    minVal[_number] = filteredVal[_number][1];
-  }
 }
 
 void switchPlay() {
@@ -201,23 +184,12 @@ void switchPlay() {
   delay(1);
 }
 
-void switchReset() {
-  reVal = digitalRead(RE);
-
-  if (reVal == HIGH) {
-    for (int i = 0; i < TOTAL_ANALOG_NUM; i++) {
-      minVal[i] = {127};
-      maxVal[i] = {127};
-    }
-  }
-}
-
 void workRealtime() {
   if (bRealtime == true) {
     //input
     for (int i = 0; i < ANALOG_NUM; i++) {
-      fbJudge(i + 3, i); //teacherが左
-      fbOutput(i + 3, i);
+      fbJudge(i, i + 3); //teacherが左 0-3, 1-4, 2-5
+      fbOutput(i, i + 3);
     }
   } else {
     for (int i = 0; i < ANALOG_NUM; i++) {
@@ -227,6 +199,8 @@ void workRealtime() {
 }
 
 void fbJudge(int teacher, int child) { //目標値，センサー値
+  dt = 100 / 3;
+
   delta[teacher][0] = delta[teacher][1]; //過去の偏差を格納
 
   delta[teacher][1] = rate[teacher] - rate[child]; //**偏差の更新**
@@ -239,7 +213,7 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
   i = KI * integral;
   d = KD * dd / dt;
 
-  setPWM_PID(p, 0, d, child);
+  setPWM_PID(p, 0, 0, child);
 
   if (absDelta[teacher] >= 1) {
     bDeform[teacher] = true;
@@ -263,13 +237,13 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
 
 int setPWM_PID(int p, int i, int d, int number) {
   //pwmに変換
-  PWM[number] = abs(p + i + d);
-  if (PWM[number] < 80) {
-    PWM[number] = 0;
-  } else if (PWM[number] >= 255) {
-    PWM[number] = 255;
+  PWM[number - 3] = abs(p + i + d);
+  if (PWM[number - 3] < 80) {
+    PWM[number - 3] = 0;
+  } else if (PWM[number - 3] >= 255) {
+    PWM[number - 3] = 255;
   }
-  return PWM[number];
+  return PWM[number - 3];
 }
 
 void fbOutput(int teacher, int child) {
@@ -278,9 +252,9 @@ void fbOutput(int teacher, int child) {
   } else {
     if (bDeform[teacher] == true) { // 偏差があるかどうか
       if (bPolarity[teacher] == true) { //正負の判定
-        sendDigitalSupply(child, PWM[child]);
+        sendDigitalSupply(child, PWM[child - 3]);
       } else {
-        sendDigitalVacuum(child, PWM[child]);
+        sendDigitalVacuum(child, PWM[child - 3]);
       }
     } else {
       sendDigitalClose(child);
@@ -291,24 +265,24 @@ void fbOutput(int teacher, int child) {
 //--------------------------------------
 
 void sendDigitalSupply(int number, int PWM) {
-  digitalWrite(valveSupplyPin[number], HIGH);
-  digitalWrite(valveVacuumPin[number], LOW);
-  analogWrite(pumpSupplyPin[number], PWM);
-  analogWrite(pumpVacuumPin[number], 0);
+  digitalWrite(valveSupplyPin[number - 3], HIGH);
+  digitalWrite(valveVacuumPin[number - 3], LOW);
+  analogWrite(pumpSupplyPin[number - 3], PWM);
+  analogWrite(pumpVacuumPin[number - 3], 0);
 }
 
 void sendDigitalVacuum(int number, int PWM) {
-  digitalWrite(valveSupplyPin[number], LOW);
-  digitalWrite(valveVacuumPin[number], HIGH);
-  analogWrite(pumpSupplyPin[number], 0);
-  analogWrite(pumpVacuumPin[number], PWM);
+  digitalWrite(valveSupplyPin[number - 3], LOW);
+  digitalWrite(valveVacuumPin[number - 3], HIGH);
+  analogWrite(pumpSupplyPin[number - 3], 0);
+  analogWrite(pumpVacuumPin[number - 3], PWM);
 }
 
 void sendDigitalClose(int number) {
-  digitalWrite(valveSupplyPin[number], HIGH);
-  digitalWrite(valveVacuumPin[number], LOW);
-  analogWrite(pumpSupplyPin[number], 0);
-  analogWrite(pumpVacuumPin[number], 0);
+  digitalWrite(valveSupplyPin[number - 3], HIGH);
+  digitalWrite(valveVacuumPin[number - 3], LOW);
+  analogWrite(pumpSupplyPin[number - 3], 0);
+  analogWrite(pumpVacuumPin[number - 3], 0);
 }
 
 void sendDigitalExhaust(int number) {
