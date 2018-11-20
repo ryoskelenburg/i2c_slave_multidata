@@ -47,6 +47,11 @@ int masterStatus = 0;
 int sendSwitch = 0;
 int receiveSwitch = 0;
 
+int oldBLed = 0;
+int booleanDelta = 0;
+
+
+
 #define RE 4
 boolean bReset = false;
 int reVal = 0;
@@ -117,12 +122,12 @@ void loop() {
 
   switchPlay();//スイッチ
   //workRealtime();//
-  
-  Serial.print("bLed: ");
-  Serial.print(bLed);
-  Serial.print(", receiveSwitch: ");
-  Serial.println(receiveSwitch);
 
+  //  Serial.print("bLed: ");
+  //  Serial.print(bLed);
+  //  Serial.print(", old: ");
+  //  Serial.println(oldBLed);
+  //  Serial.println(booleanDelta);
 
   if (receiveSwitch == 3) {
     bLed = !bLed;
@@ -131,7 +136,8 @@ void loop() {
   for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値の更新
     filteredVal[i][0] = filteredVal[i][1];
   }
-
+  booleanDelta = oldBLed - (int)bLed;
+  oldBLed = (int)bLed;
   delay(100 / 3);
 }
 
@@ -150,8 +156,10 @@ void requestEvent() {
     Wire.write(analogVal[i]);
   }
   Wire.write(bLed);//自分のステータス
-  if (bLed == true && masterStatus == 1) { //slaveがon, かつmasterもonの時,masterをoffにする
+  if (booleanDelta == -1 && masterStatus == 1) { //slaveがon, かつmasterもonの時,masterをoffにする
     sendSwitch = 3;
+  } else {
+    sendSwitch = 0;
   }
   Wire.write(sendSwitch);//相手のスイッチ
 }
