@@ -5,36 +5,25 @@
     変換関数
 */
 
-
-
 #include <Wire.h>
 #define ANALOG_NUM 3
 #define TOTAL_ANALOG_NUM ANALOG_NUM * 2
 #define Threshold 5
 
-//能動入力が0~2, 受動入力が3~5
-int masterVal[ANALOG_NUM];
-int slaveVal[ANALOG_NUM];
-int analogVal[TOTAL_ANALOG_NUM];
+int analogVal[ANALOG_NUM]; //自身の入力のみ
 
 int pumpSupplyPin[ANALOG_NUM] = {3, 6, 10};
 int pumpVacuumPin[ANALOG_NUM] = {5, 9, 11};
 int valveSupplyPin[ANALOG_NUM] = {14, 16, 18};
 int valveVacuumPin[ANALOG_NUM] = {15, 17, 19};
 
-float a = 0.9;
-int filteredVal[TOTAL_ANALOG_NUM][2] = {0}; //0~255
-int maxVal[TOTAL_ANALOG_NUM] = {0}; //0~255
-int minVal[TOTAL_ANALOG_NUM] = {255}; //0~255
 int neutralVal = 50;
-
-#define RESOLUSION 100
-int rate[TOTAL_ANALOG_NUM] = {0}; //0~100
+int rate[TOTAL_ANALOG_NUM] = {0}; //0~100 ここにデータが格納される
 
 int PWM[ANALOG_NUM] = {0};
-bool bDeform[TOTAL_ANALOG_NUM] = {false};
-bool bPolarity[TOTAL_ANALOG_NUM] = {false};
-bool bNeutral[TOTAL_ANALOG_NUM] = {false};
+boolean bDeform[ANALOG_NUM] = {false};
+boolean bPolarity[ANALOG_NUM] = {false};
+boolean bNeutral[ANALOG_NUM] = {false};
 
 #define LED 8
 #define SW 7
@@ -50,14 +39,9 @@ int receiveSwitch = 0;
 int oldBLed = 0;
 int booleanDelta = 0;
 
-#define RE 4
-boolean bReset = false;
-int reVal = 0;
-int oldReVal = 0;
-
 //PID
-int delta[TOTAL_ANALOG_NUM][2] = {{0}, {0}};
-int absDelta[TOTAL_ANALOG_NUM] = {0};
+int delta[ANALOG_NUM][2] = {{0}, {0}};
+int absDelta[ANALOG_NUM] = {0};
 float dt = 0;
 float integral;
 float KP = 4.0; //Pゲイン
@@ -75,7 +59,6 @@ void setup() {
 
   pinMode(LED, OUTPUT);
   pinMode(SW, INPUT);
-  pinMode(RE, INPUT);
   digitalWrite(LED, LOW);
 
   for (int i = 0; i < ANALOG_NUM; i++) {
@@ -127,12 +110,9 @@ void loop() {
     bLed = !bLed;
     bRealtime = !bRealtime;
   }
+
   booleanDelta = oldBLed - (int)bLed;
   oldBLed = (int)bLed;
-
-  for (int i = 0; i < TOTAL_ANALOG_NUM; i++) { //値の更新
-    filteredVal[i][0] = filteredVal[i][1];
-  }
 
   delay(100 / 3);
 }
@@ -193,7 +173,7 @@ void workRealtime() {
     }
   } else {
     for (int i = 0; i < ANALOG_NUM; i++) {
-      sendDigitalExhaust(i);
+      sendDigitalExhaust(i + 3);
     }
   }
 }
@@ -286,8 +266,8 @@ void sendDigitalClose(int number) {
 }
 
 void sendDigitalExhaust(int number) {
-  digitalWrite(valveSupplyPin[number], LOW);
-  digitalWrite(valveVacuumPin[number], LOW);
-  analogWrite(pumpSupplyPin[number], 0);
-  analogWrite(pumpVacuumPin[number], 0);
+  digitalWrite(valveSupplyPin[number - 3], LOW);
+  digitalWrite(valveVacuumPin[number - 3], LOW);
+  analogWrite(pumpSupplyPin[number - 3], 0);
+  analogWrite(pumpVacuumPin[number - 3], 0);
 }
