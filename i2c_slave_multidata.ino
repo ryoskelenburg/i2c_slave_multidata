@@ -10,7 +10,7 @@
 #define TOTAL_ANALOG_NUM ANALOG_NUM * 2
 #define Threshold 5
 
-int analogVal[ANALOG_NUM]; //自身の入力のみ
+int analogVal[ANALOG_NUM] = {0, 0, 0}; //自身の入力のみ
 
 int pumpSupplyPin[ANALOG_NUM] = {3, 6, 10};
 int pumpVacuumPin[ANALOG_NUM] = {5, 9, 11};
@@ -18,9 +18,9 @@ int valveSupplyPin[ANALOG_NUM] = {14, 16, 18};
 int valveVacuumPin[ANALOG_NUM] = {15, 17, 19};
 
 int neutralVal = 50;
-int rate[TOTAL_ANALOG_NUM] = {0}; //0~100 ここにデータが格納される
+int rate[TOTAL_ANALOG_NUM] = {0, 0, 0, 0, 0, 0}; //0~100 ここにデータが格納される
 
-int PWM[ANALOG_NUM] = {0};
+int PWM[ANALOG_NUM] = {0, 0, 0};
 boolean bDeform[ANALOG_NUM] = {false};
 boolean bPolarity[ANALOG_NUM] = {false};
 boolean bNeutral[ANALOG_NUM] = {false};
@@ -60,6 +60,7 @@ void setup() {
   pinMode(LED, OUTPUT);
   pinMode(SW, INPUT);
   digitalWrite(LED, LOW);
+  digitalWrite(SW, LOW);
 
   for (int i = 0; i < ANALOG_NUM; i++) {
     pinMode(pumpSupplyPin[i], OUTPUT);
@@ -78,30 +79,13 @@ void setup() {
 
 void loop() {
 
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < ANALOG_NUM; i++) {
     analogVal[i] = analogRead(i) / 4;
   }
 
   /*----*/
 
-  //  Serial.print("slave1: ");
-  //  Serial.print(rate[0]);
-  //  Serial.print(" slave2: ");
-  //  Serial.print(rate[1]);
-  //  Serial.print(" slave3: ");
-  //  Serial.print(rate[2]);
-  //  Serial.print(" master1: ");
-  //  Serial.print(rate[3]);
-  //  Serial.print(" master2: ");
-  //  Serial.print(rate[4]);
-  //  Serial.print(" master3: ");
-  //  Serial.println(rate[5]);
-  Serial.print("pwm1: ");
-  Serial.print(PWM[3]);
-  Serial.print(" pwm2: ");
-  Serial.print(PWM[4]);
-  Serial.print(" pwm3: ");
-  Serial.println(PWM[5]);
+  printMinMax();
 
   switchPlay();//スイッチ
   workRealtime();//
@@ -128,7 +112,7 @@ void receiveEvent() {
 }
 
 void requestEvent() {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < ANALOG_NUM; i++) {
     Wire.write(analogVal[i]);
   }
   Wire.write(bLed);//自分のステータス
@@ -195,7 +179,7 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
 
   setPWM_PID(p, 0, 0, child);
 
-  if (absDelta[teacher] >= 1) {
+  if (absDelta[teacher] >= Threshold) {
     bDeform[teacher] = true;
   } else {
     bDeform[teacher] = false;
@@ -208,7 +192,7 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
     bPolarity[teacher] = false;
   }
 
-  if (neutralVal - 5 < rate[teacher] && rate[teacher] < neutralVal + 5) { //45~ 55のとき
+  if (neutralVal - Threshold < rate[teacher] && rate[teacher] < neutralVal + Threshold) { //45~ 55のとき
     bNeutral[teacher] = true;
   } else {
     bNeutral[teacher] = false;
@@ -218,7 +202,7 @@ void fbJudge(int teacher, int child) { //目標値，センサー値
 int setPWM_PID(int p, int i, int d, int number) {
   //pwmに変換
   PWM[number - 3] = abs(p + i + d);
-  if (PWM[number - 3] < 80) {
+  if (PWM[number - 3] < 50) {
     PWM[number - 3] = 0;
   } else if (PWM[number - 3] >= 255) {
     PWM[number - 3] = 255;
@@ -270,4 +254,61 @@ void sendDigitalExhaust(int number) {
   digitalWrite(valveVacuumPin[number - 3], LOW);
   analogWrite(pumpSupplyPin[number - 3], 0);
   analogWrite(pumpVacuumPin[number - 3], 0);
+}
+
+void printMinMax() {
+  Serial.print("[");
+  Serial.print(rate[0]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[0][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[0]);
+//  Serial.print(" - ");
+//  Serial.print(maxVal[0]);
+
+  Serial.print(", [");
+  Serial.print(rate[1]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[1][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[1]);
+//  Serial.print(" - ");
+//  Serial.print(maxVal[1]);
+
+  Serial.print(", [");
+  Serial.print(rate[2]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[2][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[2]);
+//  Serial.print(" - ");
+//  Serial.print(maxVal[2]);
+
+  Serial.print(", [");
+  Serial.print(rate[3]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[3][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[3]);
+//  Serial.print(" - ");
+//  Serial.print(maxVal[3]);
+
+  Serial.print(", [");
+  Serial.print(rate[4]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[4][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[4]);
+//  Serial.print(" - ");
+//  Serial.print(maxVal[4]);
+
+  Serial.print(", [");
+  Serial.print(rate[5]);
+//  Serial.print(":");
+//  Serial.print(filteredVal[5][1]);
+//  Serial.print("]");
+//  Serial.print(minVal[5]);
+//  Serial.print(" - ");
+//  Serial.println(maxVal[5]);
+
 }
